@@ -10,8 +10,8 @@ class LogEntryHandler implements ISVNLogEntryHandler {
 
   def callback
   SVNLogEntry previousEntry
-  def commitsCount
-  def periods
+  int commitsCount
+  List commitTimes
 
   LogEntryHandler(def callback) {
     this.callback = callback
@@ -23,22 +23,23 @@ class LogEntryHandler implements ISVNLogEntryHandler {
       return
     }
     if (previousEntry == null) {
-      previousEntry = entry
       commitsCount++
+      commitTimes += entry.date.time
+      previousEntry = entry
       return
     }
 
     if (ofTheSameDay(entry)) {
       update(entry)
     } else {
-      reportDay()
+      reportDayStat()
       reset()
     }
     previousEntry = entry
   }
 
   void done() {
-    reportDay()
+    reportDayStat()
     reset()
   }
 
@@ -51,11 +52,21 @@ class LogEntryHandler implements ISVNLogEntryHandler {
 
   def update(SVNLogEntry entry) {
     commitsCount++
-    periods.add(Math.abs(entry.date.time - previousEntry.date.time))
+    commitTimes += entry.date.time
   }
 
-  def reportDay() {
-    callback(interestingDay, commitsCount, averagePeriod)
+  def reportDayStat() {
+    callback(dayStat)
+  }
+
+  def getDayStat() {
+    DayStat stat = new DayStat()
+    stat.date = interestingDay
+    stat.count = commitsCount
+    stat.min = minimalTimeDelta
+    stat.max = maximalTimeDelta
+    stat.avg = averageTimeDelta
+    return stat
   }
 
   def getInterestingDay() {
@@ -63,19 +74,45 @@ class LogEntryHandler implements ISVNLogEntryHandler {
     previousEntry.date.format('yyyy.MM.dd')
   }
 
-  def getAveragePeriod() {
-    if (periods.empty) {
+  List<Long> getCommitTimeDeltas() {
+    if (commitTimes.size() <= 1) {
+      return []
+    }
+    commitTimes = commitTimes.sort()
+    def commitTimeDeltas = []
+    for (int i = 0; i < commitTimes.size() - 1; i++) {
+      long delta = commitTimes[i + 1] - commitTimes[i]
+      commitTimeDeltas += Math.abs(delta)
+    }
+    return commitTimeDeltas
+  }
+
+  long getAverageTimeDelta() {
+    def deltas = commitTimeDeltas
+    if (deltas.empty) {
       return 0
     }
-    float sum = 0
-    periods.each {sum += it}
-    def averagePeriodInMillis =  sum / periods.size()
-    return (averagePeriodInMillis / 1000) as int
+    def averageTimeDeltaInMillis =  deltas.sum() / deltas.size()
+    return (averageTimeDeltaInMillis / 1000) as int
+  }
+
+  long getMinimalTimeDelta() {
+    if (commitTimeDeltas.empty) {
+      return 0
+    }
+    return (commitTimeDeltas.min() / 1000) as int
+  }
+
+  long getMaximalTimeDelta() {
+    if (commitTimeDeltas.empty) {
+      return 0
+    }
+    return (commitTimeDeltas.max() / 1000) as int
   }
 
   def reset() {
     previousEntry = null
     commitsCount = 0
-    periods = []
+    commitTimes = []
   }
 }
